@@ -6,6 +6,24 @@ PKG_REPO_OS_TYPE=ubuntu
 PKG_REPO_OS_VERSION=14.04
 PKG_REPO_USER_DATA=${PKG_REPO_OS_TYPE}-${PKG_REPO_OS_VERSION}-user-data.txt
 
+# The --property filter does NOT get applied multiple times.
+# So we must do the work ourselves.
+# It is still possible that there are multiple images with the same name, so we
+# take the first one after that.
+# Filters:
+# 1: Owner, as depending on OpenStack permissions, you can see multiple owner's images
+# 2: Name of image
+define get_image_id
+$$(openstack image list -f json --long \
+	| jq -r '.[] | select(.Owner == "$(OS_TENANT_ID)" and .Name == "$(1)") | .ID' \
+	| head -n1 )
+endef
+
+PKG_REPO_IMAGE_NAME=teuthology-${PKG_REPO_OS_TYPE}-${PKG_REPO_OS_VERSION}
+PKG_REPO_IMAGE_ID=$(call get_image_id,$(PKG_REPO_IMAGE_NAME))
+BUILD_IMAGE_NAME=teuthology-${CEPH_OS_TYPE}-${CEPH_OS_VERSION}
+BUILD_IMAGE_ID=$(call get_image_id,$(BUILD_IMAGE_NAME))
+
 # We want to extract the first listed IPv4 address!
 # Openstack will provide the addresses field in this format:
 # "net1-name=ip(, ip)+(; net2-name=ip(, ip)+)+"
@@ -30,7 +48,7 @@ ${HOME}/.ssh_agent:
 	grep -q ssh_agent ~/.bashrc_teuthology || echo 'source ${HOME}/.ssh_agent' >> ~/.bashrc_teuthology
 
 flock-${PKG_REPO}:
-	openstack server create --image 'teuthology-ubuntu-14.04' --flavor ${HTTP_FLAVOR} --key-name teuthology --security-group teuthology --property ownedby=${MY_IP} --user-data ${PKG_REPO_USER_DATA} --wait ${PKG_REPO}
+	openstack server create --image ${PKG_REPO_IMAGE_ID} --flavor ${HTTP_FLAVOR} --key-name teuthology --security-group teuthology --property ownedby=${MY_IP} --user-data ${PKG_REPO_USER_DATA} --wait ${PKG_REPO}
 	sleep 30
 	set -ex ; \
 	ip=$(call get_ip,${PKG_REPO}) ; \
@@ -47,7 +65,7 @@ ${PKG_REPO}:
 	touch ${D}/$@
 
 ceph-${CEPH_PKG_TYPE}-${CEPH_DIST}-${CEPH_ARCH}-${CEPH_FLAVOR}-${CEPH_SHA1}: ${PKG_REPO}
-	openstack server create --image 'teuthology-${CEPH_OS_TYPE}-${CEPH_OS_VERSION}' --flavor ${BUILD_FLAVOR} --key-name teuthology --security-group teuthology --property ownedby=${MY_IP} --user-data ${CEPH_OS_TYPE}-${CEPH_OS_VERSION}-user-data.txt --wait $@
+	openstack server create --image ${BUILD_IMAGE_ID} --flavor ${BUILD_FLAVOR} --key-name teuthology --security-group teuthology --property ownedby=${MY_IP} --user-data ${CEPH_OS_TYPE}-${CEPH_OS_VERSION}-user-data.txt --wait $@
 	sleep 30
 	set -ex ; \
 	trap "openstack server delete --wait $@" EXIT ; \
