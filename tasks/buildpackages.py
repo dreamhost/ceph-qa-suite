@@ -167,8 +167,15 @@ def task(ctx, config):
             'ram': 1024, # MB
             'cpus': 1,
         }, select)
+        lockname = "/tmp/buildpackages-{sha1}-{pkg_type}-{os_type}-{os_version}-{arch}".format(
+                pkg_type=pkg_type,
+                os_type=os_type,
+                os_version=os_version,
+                arch=arch,
+                sha1=sha1,
+                )
         cmd = (". " + os.environ['HOME'] + "/.ssh_agent ; " +
-               " flock --close /tmp/buildpackages-" + sha1 +
+               " flock --close " + lockname +
                " make -C " + d +
                " CEPH_GIT_URL=" + teuth_config.get_ceph_git_url() +
                " CEPH_PKG_TYPE=" + pkg_type +
